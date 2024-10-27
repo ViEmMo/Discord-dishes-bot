@@ -13,7 +13,7 @@ Unfortunally, due to my mates language, this bot contains only Italian dishes, b
 4. [Set up](#set-up)
 5. [Usage](#usage)
 6. [Next Features](#next-features)
-7. [Contributing](#contributins)
+7. [Contributing](#contributing)
 
 ## Features
 - **Random recipes** - Get a random recipes and rename a voice channel with the recipe name
