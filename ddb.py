@@ -6,7 +6,7 @@ import random
 import asyncio
 import unicodedata
 
-# Imposta il prefisso del bot e gli intents necessari
+# Set Intents
 intents = discord.Intents.all()
 intents.guilds = True
 intents.voice_states = True
@@ -16,10 +16,10 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 load_dotenv()
 
-ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv("ANNOUNCEMENTS_CHANNEL"))  # ID del canale di annunci
-VOICE_CHANNEL_ID = int(os.getenv("VOICE_CHANNEL"))  # ID del canale vocale
+ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv("ANNOUNCEMENTS_CHANNEL"))  # ID announcements channel
+VOICE_CHANNEL_ID = int(os.getenv("VOICE_CHANNEL"))  # ID vocal channel
 
-# Lista di ricette con i relativi ingredienti (filtrata per ricette con almeno 8 ingredienti)
+# Recipes list (min 8 ingredients)
 recipes = {
     "Spaghetti alla Carbonara": ["spaghetti", "guanciale", "uova", "pecorino", "pepe nero", "sale", "olio", "parmigiano"],
     "Lasagna al Ragù": ["lasagne", "carne macinata", "passata di pomodoro", "cipolla", "carota", "sedano", "besciamella", "parmigiano"],
@@ -92,33 +92,29 @@ MESSAGGI_RIMOZIONE = [
 
 tentativi_utente = {}
 
-# Filtra solo le ricette con almeno 8 ingredienti
-recipes = {name: ingredients for name, ingredients in recipes.items() if len(ingredients) >= 8}
-
-# Variabile per tenere traccia della ricetta del giorno
+# Variabile track recipe
 current_recipe = None
 current_ingredients = []
 
-# Funzione per normalizzare le stringhe e gestire accenti
+# Normalize string for accent
 def normalize_string(s):
-    # Normalizza la stringa rimuovendo le differenze tra accenti
     return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII').lower()
 
-# Quando il bot è pronto
+# When bot is ready
 @bot.event
 async def on_ready():
     print(f'Bot {bot.user} è online.')
-    change_channel_name.start()  # Avvia il task giornaliero
+    change_channel_name.start()  # Start daily task
     bot.loop.create_task(check_voice_channel_members())
 
 @bot.command(name="menu")
 async def cambia_nome(ctx):
     global current_recipe, current_ingredients
 
-    # Scegli una ricetta casuale e aggiorna variabili
+    # Pick random recipe
     current_recipe, current_ingredients = random.choice(list(recipes.items()))
 
-    # Ottieni il canale vocale specifico
+    # Load voice channel
     guild = ctx.guild
     voice_channel = discord.utils.get(guild.voice_channels, id=VOICE_CHANNEL_ID)
 
@@ -128,50 +124,49 @@ async def cambia_nome(ctx):
     else:
         await ctx.send("Canale vocale non trovato. Verifica che il bot abbia i permessi necessari.")
 
-# Task giornaliero per cambiare il nome del canale vocale
+# Task change voice channel name
 @tasks.loop(hours=24)
 async def change_channel_name():
     global current_recipe, current_ingredients
     
-    # Scegli una ricetta casuale
+    # Pick random recipe
     current_recipe, current_ingredients = random.choice(list(recipes.items()))
     
-    # Ottieni il server e il canale vocale specifico
-    guild = bot.guilds[0]  # Assumi che ci sia solo un server
-    voice_channel = discord.utils.get(guild.voice_channels, id=VOICE_CHANNEL_ID)  # Il nome iniziale del canale vocale
+    # Load voice channel
+    guild = bot.guilds[0]
+    voice_channel = discord.utils.get(guild.voice_channels, id=VOICE_CHANNEL_ID)  # First name voice channel
     
     if voice_channel:
-        # Cambia il nome del canale con il nome della ricetta
+        # Rename voice channel
         await voice_channel.edit(name=current_recipe)
         print(f"Nome del canale cambiato in: {current_recipe}")
     else:
         print("Canale vocale non trovato.")
 
-# Funzione che controlla se l'utente ha nel nome uno degli ingredienti e agisce di conseguenza
+# Check if user nick is compliant
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # Identifica il canale testuale per inviare notifiche
-    text_channel = discord.utils.get(member.guild.text_channels, id=ANNOUNCEMENTS_CHANNEL_ID)  # Cambia "announcements" con il nome del tuo canale
+    # Load text chat
+    text_channel = discord.utils.get(member.guild.text_channels, id=ANNOUNCEMENTS_CHANNEL_ID)
 
-    # Usa il nickname dell'utente se disponibile, altrimenti il nome utente
+    # Use nick or name
     user_nick_or_name = member.nick if member.nick else member.name
     normalized_member_name = normalize_string(user_nick_or_name)
     
-    # Verifica che l'utente sia entrato nel canale vocale specifico
+    #Check if is right channel
     if after.channel is not None and after.channel.name == current_recipe:
-        # Ottieni tutti gli altri membri nel canale vocale
+        # Load all user active in channel
         voice_channel = after.channel
         members_in_channel = voice_channel.members
 
-        # Controlla se il nickname coincide con quello di un altro membro già presente nel canale
+        # Check for duplicate
         for other_member in members_in_channel:
             if other_member != member:
-                # Usa il nickname dell'altro membro o il suo nome se non ha un nickname
                 other_nick_or_name = other_member.nick if other_member.nick else other_member.name
                 normalized_other_name = normalize_string(other_nick_or_name)
                 
                 if normalized_member_name == normalized_other_name:
-                    # Rimuovi l'utente se c'è un duplicato del nickname
+                    # Kick if duplicate
                     await member.move_to(None)
                     if text_channel is not None:
                         messaggio_random = random.choice(MESSAGGI_RIMOZIONE)
@@ -179,7 +174,7 @@ async def on_voice_state_update(member, before, after):
                     print(f"{user_nick_or_name} è stato rimosso dal canale vocale per nickname duplicato.")
                     return
         
-        # Controlla se il nickname contiene un ingrediente della ricetta
+        # Check if name is compliant
         if not any(normalize_string(ingredient) in normalized_member_name for ingredient in current_ingredients):
             await member.move_to(None)
             if text_channel is not None:
@@ -188,56 +183,49 @@ async def on_voice_state_update(member, before, after):
             print(f"{user_nick_or_name} è stato rimosso dal canale vocale perché il nickname non è pertinente.")
 
 
-# Task periodico per controllare i membri nel canale vocale ogni minuto
+# Check every 60 seconds
 async def check_voice_channel_members():
-    await bot.wait_until_ready()  # Assicura che il bot sia completamente pronto
+    await bot.wait_until_ready()  # Is bot ready?
     while not bot.is_closed():
         try:
-            # Identifica la gilda su cui eseguire il controllo
-            guild = bot.guilds[0]  # Usa la prima gilda; verifica se il bot è in più gilde
+            guild = bot.guilds[0]
             if guild is None:
                 print("Gilda non trovata.")
                 await asyncio.sleep(60)
                 continue
 
-            # Trova il canale vocale in base al nome della ricetta corrente
+            # Load channel with recipe or None
             voice_channel = discord.utils.get(guild.voice_channels, name=current_recipe)
             if voice_channel is None:
                 print(f"Canale vocale '{current_recipe}' non trovato.")
                 await asyncio.sleep(60)
                 continue
 
-            # Trova il canale di testo per i messaggi (sostituisci 'announcements' con il nome desiderato)
+            # Load text chat
             text_channel = discord.utils.get(guild.text_channels, id=ANNOUNCEMENTS_CHANNEL_ID)
             if text_channel is None:
                 print("Canale di testo per notifiche non trovato.")
                 await asyncio.sleep(60)
                 continue
 
-            # Imposta un insieme per controllare i nickname unici
             unique_nicknames = set()
 
-            # Itera tra i membri nel canale vocale
             for member in voice_channel.members:
-                # Usa il nickname o il nome utente
                 user_nick_or_name = member.nick if member.nick else member.name
                 normalized_member_name = normalize_string(user_nick_or_name)
 
-                # Controllo di unicità del nickname
                 if normalized_member_name in unique_nicknames:
                     await member.move_to(None)
                     messaggio_random = random.choice(MESSAGGI_RIMOZIONE)
                     await text_channel.send(f"{member.mention} {messaggio_random}")
                     continue
 
-                # Controllo di pertinenza del nickname rispetto agli ingredienti
                 if not any(normalize_string(ingredient) in normalized_member_name for ingredient in current_ingredients):
                     await member.move_to(None)
                     messaggio_random = random.choice(MESSAGGI_RIMOZIONE)
                     await text_channel.send(f"{member.mention} {messaggio_random}")
                     continue
 
-                # Se il nickname è valido e unico, aggiungilo all'insieme
                 unique_nicknames.add(normalized_member_name)
 
             print("Controllo completato.")
@@ -245,14 +233,12 @@ async def check_voice_channel_members():
         except Exception as e:
             print(f"Errore durante l'esecuzione di check_voice_channel_members: {e}")
 
-        # Aspetta 60 secondi prima di ripetere il controllo
         await asyncio.sleep(60)
 
-# Task che inizia con un ritardo di qualche secondo per sincronizzarsi con l'inizio della giornata
 @change_channel_name.before_loop
 async def before_change_channel_name():
     await bot.wait_until_ready()
-    await asyncio.sleep(5)  # Aggiungi un ritardo per garantire che tutto sia caricato
+    await asyncio.sleep(5)  # Add delay to be sure it is ready
 
-# Avvia il bot (sostituisci 'YOUR_TOKEN_HERE' con il token del tuo bot)
+# Run bot
 bot.run(os.getenv("KEY"))
